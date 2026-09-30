@@ -1,0 +1,1477 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Le trajet d'un message</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Unbounded:wght@500;600&display=swap">
+<style>
+  /* Layout: a 16:9 motion-design player, its transport bar, then the 7 steps as a readable legend.
+     One deliberate dark world (deep-sea ink). Each accent has one meaning:
+     orange = your data (packets), yellow = radio waves, cyan = light in the fibre. */
+  :root {
+    --ink: #08141c;
+    --ink-2: #0f2230;
+    --void: #03090d;
+    --line: #1c3848;
+    --paper: #eaf2f0;
+    --muted: #86a2ac;
+    --signal: #ff7a3d;
+    --radio: #ffd24a;
+    --photon: #5ef0e0;
+    --f-display: "Unbounded", "Arial Black", sans-serif;
+    --f-body: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+    --f-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  html { background: var(--ink); }
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding-inline: clamp(16px, 4vw, 40px);
+    padding-block: clamp(20px, 4vw, 44px) 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .head { display: flex; flex-direction: column; gap: 10px; }
+  .kicker {
+    margin: 0;
+    font-family: var(--f-mono);
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .kicker b { color: var(--signal); font-weight: 500; }
+  h1 {
+    margin: 0;
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(28px, 4.4vw, 54px);
+    line-height: 1.04;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+  }
+  .lead { margin: 0; max-width: 64ch; color: var(--muted); font-size: clamp(15px, 1.5vw, 18px); }
+
+  .player { display: flex; flex-direction: column; gap: 12px; }
+  .stage {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 16 / 9;
+    background: var(--ink);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px var(--line), 0 40px 90px -40px var(--void);
+  }
+  .stage canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+  .controls { display: flex; align-items: center; gap: 12px; }
+  .btn {
+    flex: none;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--ink-2);
+    color: var(--paper);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .btn:hover { border-color: var(--muted); }
+  .btn svg { width: 18px; height: 18px; fill: currentColor; }
+  .btn:focus-visible, .scrub:focus-visible, .step:focus-visible { outline: 2px solid var(--radio); outline-offset: 3px; }
+  .scrub { position: relative; flex: 1; min-width: 0; height: 32px; cursor: pointer; touch-action: none; }
+  .scrub .rail, .scrub .fill { position: absolute; left: 0; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; }
+  .scrub .rail { right: 0; background: var(--line); }
+  .scrub .fill { width: 0; background: var(--signal); }
+  .scrub .tick { position: absolute; top: 50%; width: 3px; height: 8px; margin: -4px 0 0 -1.5px; background: var(--ink); }
+  .scrub .knob {
+    position: absolute; top: 50%; left: 0; width: 14px; height: 14px; margin: -7px 0 0 -7px;
+    border-radius: 50%; background: var(--paper); box-shadow: 0 0 0 4px var(--ink);
+  }
+  .time {
+    flex: none;
+    font-family: var(--f-mono);
+    font-size: 13px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 11ch;
+    text-align: right;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0; padding: 0; list-style: none; font-size: 14px; color: var(--muted); }
+  .legend li { display: flex; align-items: center; gap: 8px; }
+  .legend i { width: 18px; height: 6px; border-radius: 3px; flex: none; }
+
+  .steps { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+  .steps li { display: flex; min-width: 0; }
+  .step {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px 18px 18px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .25s, background-color .25s;
+  }
+  .step:hover { border-color: var(--muted); }
+  .step .n { font-family: var(--f-mono); font-size: 12px; letter-spacing: .12em; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .step h2 { margin: 0; font-family: var(--f-display); font-weight: 500; font-size: 16px; line-height: 1.25; text-wrap: balance; }
+  .step p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+  .step[aria-current="step"] { border-color: var(--signal); background: var(--ink-2); }
+  .step[aria-current="step"] .n { color: var(--signal); }
+  .note { margin: 4px 0 0; max-width: 90ch; font-size: 13px; color: var(--muted); }
+  .note .ip { font-family: var(--f-mono); font-size: 12px; color: var(--paper); }
+
+  @media (max-width: 560px) {
+    .stage { border-radius: 10px; }
+    .time { min-width: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .step { transition: none; }
+  }
+</style>
+
+<main class="wrap">
+  <header class="head">
+    <p class="kicker"><b>Motion design</b> · 15 secondes · au ralenti</p>
+    <h1>Le trajet d'un message</h1>
+    <p class="lead">Tu appuies sur « Envoyer » à Paris. Deux dixièmes de seconde plus tard, tes amis le lisent à Montréal, Lyon, Dakar et São Paulo. Voici tout ce qui se passe entre les deux.</p>
+  </header>
+
+  <section class="player" aria-label="Lecteur">
+    <div class="stage">
+      <canvas id="scene" width="1920" height="1080" role="img"
+        aria-label="Animation en 7 étapes : le message est codé en bits et découpé en paquets, envoyé par ondes radio à une antenne 5G, transporté en lumière dans la fibre optique, aiguillé par des routeurs à travers les câbles sous-marins de l'Atlantique, relayé par un data center, puis reçu et remis en ordre sur les téléphones des destinataires, en 0,21 seconde."></canvas>
+    </div>
+    <div class="controls">
+      <button class="btn" id="play" type="button" aria-label="Lecture">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path id="play-icon" d="M7 4.5v15l13-7.5z"/></svg>
+      </button>
+      <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Position dans l'animation"
+        aria-valuemin="0" aria-valuemax="15" aria-valuenow="0" aria-valuetext="0 seconde">
+        <div class="rail"></div>
+        <div class="fill"></div>
+        <div class="knob"></div>
+      </div>
+      <span class="time" id="time">0,0 / 15 s</span>
+      <button class="btn" id="restart" type="button" aria-label="Rejouer depuis le début">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1.5L7 6.5l5 5V8a5 5 0 1 1-5 5H4.5A7.5 7.5 0 1 0 12 5z"/></svg>
+      </button>
+    </div>
+    <ul class="legend">
+      <li><i style="background: var(--signal)"></i>Tes données, découpées en paquets</li>
+      <li><i style="background: var(--radio)"></i>Ondes radio</li>
+      <li><i style="background: var(--photon)"></i>Lumière dans la fibre optique</li>
+    </ul>
+  </section>
+
+  <ol class="steps" id="steps">
+    <li><button class="step" type="button" data-at="0"><span class="n">01</span><h2>Tu appuies sur Envoyer</h2><p>Ton application de messagerie récupère le texte que tu viens de taper.</p></button></li>
+    <li><button class="step" type="button" data-at="1.8"><span class="n">02</span><h2>Tout devient 0 et 1</h2><p>Chaque lettre est codée en 8 bits (S = 01010011). Le message est découpé en paquets numérotés, et chacun porte l'adresse IP de sa destination.</p></button></li>
+    <li><button class="step" type="button" data-at="4"><span class="n">03</span><h2>Ondes radio</h2><p>Le téléphone convertit les bits en ondes radio (3,5 GHz en 5G), captées par l'antenne-relais la plus proche.</p></button></li>
+    <li><button class="step" type="button" data-at="5.35"><span class="n">04</span><h2>Fibre optique</h2><p>L'antenne est reliée à l'opérateur par fibre : les bits deviennent des flashs de lumière qui rebondissent dans un fil de verre de 0,125 mm, à environ 200 000 km/s.</p></button></li>
+    <li><button class="step" type="button" data-at="6.9"><span class="n">05</span><h2>Routeurs et câbles sous-marins</h2><p>À chaque carrefour, un routeur lit l'adresse et choisit une route. Deux paquets du même message peuvent passer par des câbles différents, ici Dunant et Amitié, posés au fond de l'Atlantique.</p></button></li>
+    <li><button class="step" type="button" data-at="9.2"><span class="n">06</span><h2>Le serveur relaie</h2><p>Le data center de l'application reçoit le message chiffré et en envoie une copie à chaque membre du groupe.</p></button></li>
+    <li><button class="step" type="button" data-at="10.9"><span class="n">07</span><h2>Réception</h2><p>Chaque copie refait le chemin : routeurs, fibre, antenne, radio. Les paquets arrivent parfois dans le désordre ; le téléphone les remet dans l'ordre et affiche le message.</p></button></li>
+    <li><button class="step" type="button" data-at="13.2"><span class="n">BILAN</span><h2>0,21 seconde</h2><p>Près de 15 000 km jusqu'à São Paulo, quatre fuseaux horaires, et à peu près la durée d'un clin d'œil.</p></button></li>
+  </ol>
+
+  <p class="note">Les câbles Dunant (Saint-Hilaire-de-Riez ↔ Virginia Beach) et Amitié (Le Porge ↔ Lynn, Massachusetts) existent vraiment. L'adresse <span class="ip">203.0.113.42</span> est une adresse réservée aux exemples. Les durées sont des ordres de grandeur réalistes : elles varient selon l'opérateur, l'application et l'encombrement du réseau.</p>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ================================================================
+     DATA
+     ================================================================ */
+  // Land mask: rows of [start, length] runs on an equal-area dot grid (generated from Natural Earth 1:50m).
+  const LAND = {"step":1.25,"top":80,"rows":[[12,3,16,7,28,1,38,1],[13,3,17,8,30,1],[14,2,17,1,20,7,33,1],[11,1,13,4,21,9,46,1,53,2],[14,1,17,4,25,8,49,1,56,5,66,1,68,1],[13,1,18,2,28,8,60,6,68,1,72,1],[13,5,19,2,22,2,30,8,56,1,60,1,63,12,77,2],[0,1,16,4,25,3,33,8,60,1,64,2,67,13,81,5],[5,5,13,2,17,5,23,1,26,5,34,1,36,7,56,2,68,1,70,23,96,1],[4,19,25,4,30,2,37,7,56,7,67,1,69,2,72,1,74,30],[0,1,5,23,29,1,31,1,33,2,39,6,60,9,70,7,78,32],[0,3,6,24,34,2,37,1,41,5,62,7,70,46],[1,2,5,26,32,1,35,3,43,4,53,3,65,3,70,4,75,47],[7,25,33,2,38,3,45,4,56,1,67,4,72,55],[5,27,41,1,48,3,69,4,74,53,128,5],[6,5,12,21,39,3,51,2,71,5,78,52,131,1,133,3],[5,8,15,19,41,3,54,1,71,1,74,6,81,1,84,50,138,1],[10,1,17,18,42,3,47,1,77,1,79,3,84,49,141,1],[11,1,20,18,44,7,75,2,83,3,88,50,145,3],[9,1,21,20,44,1,46,7,78,1,84,1,86,1,89,52,149,4],[7,1,21,24,47,8,79,3,86,1,92,54,154,3],[6,1,23,23,48,10,80,2,84,1,89,62,152,1,159,1],[23,1,25,23,49,11,83,1,86,2,90,67,164,1],[26,35,88,72,161,1,168,1],[27,31,93,72],[29,32,64,3,94,75],[30,29,60,2,68,1,96,77,174,1],[31,34,99,17,117,2,121,6,129,47],[32,32,65,2,101,8,110,9,121,1,123,6,130,49,182,1],[32,31,103,5,110,2,113,8,127,5,134,48,186,2],[33,31,101,7,111,1,113,1,117,5,130,4,137,46,188,1,190,1],[34,31,103,7,117,1,120,6,127,4,133,5,141,46,193,1],[34,31,105,6,120,1,123,1,127,14,143,41,185,4,196,2],[35,31,95,1,107,6,126,1,129,14,146,40,191,2,200,1],[36,30,108,5,122,2,131,14,148,41,190,1,194,2,202,1],[38,29,112,1,116,7,137,1,139,55,198,1,204,3],[39,29,114,11,134,1,139,1,142,54,201,1,205,4],[41,26,115,11,143,56,208,2],[42,25,115,16,135,2,145,58,209,1],[43,2,46,21,116,18,137,5,143,2,146,60,212,1],[44,1,47,15,65,1,67,1,118,40,159,50],[46,1,48,11,68,2,113,1,118,42,162,49],[46,2,49,10,69,2,118,33,153,9,165,48],[48,1,51,8,70,2,119,35,155,10,170,45],[49,1,52,8,120,36,158,10,170,1,179,38,218,1],[51,1,54,6,120,38,160,14,182,36,220,1],[55,6,71,1,73,1,121,39,162,15,185,15,201,16],[56,5,67,2,76,1,121,41,163,15,186,13,203,11],[18,1,56,7,67,3,77,2,123,41,166,13,190,10,206,9,218,1],[58,6,67,3,82,3,124,41,168,12,192,9,207,10,219,1],[60,10,125,42,170,10,193,8,210,9,229,2],[63,7,125,43,171,7,194,6,211,1,213,8,230,2],[67,8,126,44,172,6,196,5,215,8,232,1],[70,5,127,46,174,3,198,4,216,9,233,1,235,1],[72,3,127,47,182,1,199,4,218,1,220,6],[74,1,83,2,86,1,93,1,129,46,179,2,200,4,218,1,222,4,238,1],[74,2,82,3,86,7,131,51,202,3,219,1,225,1,239,1],[76,3,80,1,82,12,132,50,203,1,206,1,220,2,235,1,241,1],[81,15,133,49,206,2,222,1,242,2],[81,16,135,9,147,35,207,1,223,1,235,1,242,1],[82,20,136,3,141,1,148,34,220,1,224,2,236,2],[82,21,150,31,221,1,224,2,234,3],[82,21,152,29,222,2,225,2,233,5],[81,23,152,27,223,3,231,8],[80,23,104,1,151,27,224,3,231,7],[79,23,103,4,151,26,224,4,232,5,239,1,241,2,249,2],[80,28,109,1,152,25,225,3,232,5,239,3,250,1,253,4],[79,34,152,23,225,3,235,1,239,2,244,2,249,9],[79,35,153,22,226,2,241,1,253,7,264,1],[79,36,153,21,227,2,253,7,262,1,266,1],[80,35,153,21,228,5,247,1,253,7],[80,35,153,21,234,5,242,1,254,2,258,2],[80,34,153,20,258,2],[80,32,152,21,252,1],[81,30,151,21,242,5,251,1],[81,29,150,22,177,2,241,5,250,2],[81,28,148,22,175,3,236,8,248,3],[82,26,147,22,172,4,233,11,246,4,266,1],[83,25,146,20,171,4,231,13,245,4,273,1],[83,23,146,18,170,4,229,18],[83,22,145,17,169,3,226,21],[82,22,144,16,167,3,175,1,220,25],[81,21,144,15,165,3,217,27],[80,19,143,15,164,3,215,28],[79,17,141,14,162,3,213,28],[78,16,140,13,211,28],[77,16,138,13,208,28],[76,16,138,10,206,28],[75,15,136,10,204,26],[74,14,135,9,202,26],[73,13,134,7,200,6,212,12],[72,12,132,5,196,6,209,1,211,9],[71,9,194,1,209,8],[69,10,206,7,228,1],[67,11,203,6,225,1],[67,8,222,2],[65,7,201,1,218,1],[64,5,196,2,212,3],[62,7,192,1,207,1],[62,4,202,2],[60,4,197,2],[58,4,192,2],[57,5],[55,5],[54,4],[53,2],[52,2],[50,1,52,1],[50,2],[]]};
+
+  const W = 1920, H = 1080, DUR = 15, TAU = Math.PI * 2, D2R = Math.PI / 180;
+  const cv = document.getElementById('scene');
+  const ctx = cv.getContext('2d');
+  const rs = getComputedStyle(document.documentElement);
+  const tok = (n, d) => rs.getPropertyValue(n).trim() || d;
+  const C = {
+    ink: tok('--ink', '#08141c'), ink2: tok('--ink-2', '#0f2230'), void: tok('--void', '#03090d'),
+    line: tok('--line', '#1c3848'), paper: tok('--paper', '#eaf2f0'), muted: tok('--muted', '#86a2ac'),
+    signal: tok('--signal', '#ff7a3d'), radio: tok('--radio', '#ffd24a'), photon: tok('--photon', '#5ef0e0'),
+  };
+  const F = {
+    display: '"Unbounded", "Arial Black", sans-serif',
+    body: '"Instrument Sans", "Helvetica Neue", Arial, sans-serif',
+    mono: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
+  };
+  const font = (w, s, f) => `${w} ${s}px ${f}`;
+
+  const MSG = 'Salut ! On se voit ce soir ?';           // what gets encoded
+  const MSG_D = 'Salut ! On se voit ce soir ?'; // what gets displayed (French spacing)
+  const BYTES = Array.from(MSG, ch => ch.charCodeAt(0));
+  const BITS = BYTES.map(b => b.toString(2).padStart(8, '0'));
+  const PACKET_OF = BYTES.map((_, i) => Math.floor(i / 7)); // 7 bytes per packet -> 4 packets
+  const DEST_IP = '203.0.113.42';
+
+  const CH = [
+    { a: 0, b: 1.8, n: '01', title: 'Tu appuies sur Envoyer', sub: 'Ton appli récupère le texte que tu viens de taper.' },
+    { a: 1.8, b: 4.0, n: '02', title: 'Tout devient 0 et 1', sub: 'Chaque lettre est codée en bits, puis le message est découpé en paquets numérotés et adressés.' },
+    { a: 4.0, b: 5.35, n: '03', title: 'Ondes radio', sub: "Ton téléphone envoie les paquets à l'antenne 5G la plus proche." },
+    { a: 5.35, b: 6.9, n: '04', title: 'Fibre optique', sub: 'Les bits deviennent des flashs de lumière dans un fil de verre.' },
+    { a: 6.9, b: 9.2, n: '05', title: 'Routeurs et câbles sous-marins', sub: "Chaque routeur aiguille les paquets. L'Atlantique se traverse par le fond de l'océan." },
+    { a: 9.2, b: 10.9, n: '06', title: 'Le serveur relaie', sub: "Le data center de l'appli copie le message chiffré pour chaque destinataire." },
+    { a: 10.9, b: 13.2, n: '07', title: 'Réception', sub: 'Les paquets arrivent dans le désordre. Le téléphone les remet en ordre.' },
+  ];
+  const SEGMENTS = [...CH.map(c => [c.a, c.b]), [13.2, 15]];
+
+  /* ================================================================
+     MATH
+     ================================================================ */
+  const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const seg = (t, a, b) => clamp((t - a) / (b - a));
+  const E = {
+    inOutCubic: k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2,
+    outCubic: k => 1 - Math.pow(1 - k, 3),
+    inCubic: k => k * k * k,
+    outQuint: k => 1 - Math.pow(1 - k, 5),
+    outExpo: k => k >= 1 ? 1 : 1 - Math.pow(2, -10 * k),
+    outBack: k => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); },
+    inBack: k => { const c1 = 1.70158, c3 = c1 + 1; return c3 * k * k * k - c1 * k * k; },
+    inOutSine: k => -(Math.cos(Math.PI * k) - 1) / 2,
+  };
+  const tri = u => 2 * Math.abs(2 * (u - Math.floor(u + .5))) - 1;
+  function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+
+  // Monotone cubic keyframe track (continuous velocity, no overshoot, eases at both ends).
+  function track(keys) {
+    const n = keys.length, ts = keys.map(k => k[0]), vs = keys.map(k => k[1]);
+    const d = [], m = new Array(n).fill(0);
+    for (let i = 0; i < n - 1; i++) d[i] = (vs[i + 1] - vs[i]) / (ts[i + 1] - ts[i]);
+    for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+    for (let i = 0; i < n - 1; i++) {
+      if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+      const a = m[i] / d[i], b = m[i + 1] / d[i], s = a * a + b * b;
+      if (s > 9) { const k = 3 / Math.sqrt(s); m[i] = k * a * d[i]; m[i + 1] = k * b * d[i]; }
+    }
+    return t => {
+      if (t <= ts[0]) return vs[0];
+      if (t >= ts[n - 1]) return vs[n - 1];
+      let i = 0; while (t > ts[i + 1]) i++;
+      const h = ts[i + 1] - ts[i], s = (t - ts[i]) / h, s2 = s * s, s3 = s2 * s;
+      return (2 * s3 - 3 * s2 + 1) * vs[i] + (s3 - 2 * s2 + s) * h * m[i] + (-2 * s3 + 3 * s2) * vs[i + 1] + (s3 - s2) * h * m[i + 1];
+    };
+  }
+
+  /* ================================================================
+     COLOR + DRAW HELPERS
+     ================================================================ */
+  const rgbCache = {};
+  function hexRgb(h) {
+    if (rgbCache[h]) return rgbCache[h];
+    let s = h.replace('#', '');
+    if (s.length === 3) s = s.split('').map(c => c + c).join('');
+    const n = parseInt(s, 16);
+    return (rgbCache[h] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]);
+  }
+  const rgba = (hex, a) => { const c = hexRgb(hex); return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
+  const mixHex = (h1, h2, k) => { const a = hexRgb(h1), b = hexRgb(h2); return `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], k))).join(',')})`; };
+
+  function rr(x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  const hasLS = 'letterSpacing' in ctx;
+  function text(s, x, y, o) {
+    ctx.font = o.font;
+    ctx.fillStyle = o.color;
+    ctx.textAlign = o.align || 'left';
+    ctx.textBaseline = o.base || 'alphabetic';
+    if (hasLS) ctx.letterSpacing = (o.ls || 0) + 'px';
+    ctx.fillText(s, x, y);
+    if (hasLS && o.ls) ctx.letterSpacing = '0px';
+  }
+  function measure(s, fnt, ls = 0) {
+    ctx.font = fnt;
+    if (hasLS) ctx.letterSpacing = ls + 'px';
+    const w = ctx.measureText(s).width;
+    if (hasLS && ls) ctx.letterSpacing = '0px';
+    return w;
+  }
+  function wrap(s, maxW, fnt) {
+    const words = s.split(' '), lines = [];
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (cur && measure(test, fnt) > maxW) { lines.push(cur); cur = w; } else cur = test;
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+  function makeGlow(hex) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, rgba(hex, 1));
+    gr.addColorStop(.22, rgba(hex, .5));
+    gr.addColorStop(.55, rgba(hex, .12));
+    gr.addColorStop(1, rgba(hex, 0));
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 128, 128);
+    return c;
+  }
+  const GLOW = { photon: makeGlow(C.photon), signal: makeGlow(C.signal), radio: makeGlow(C.radio) };
+  function glow(sprite, x, y, r, a = 1) {
+    ctx.save();
+    ctx.globalAlpha *= a;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(sprite, x - r, y - r, r * 2, r * 2);
+    ctx.restore();
+  }
+  function checks(x, y, s, color) { // double check mark, (x, y) = left baseline
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = 1.8 * s / 10; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const dx of [0, .55 * s]) {
+      ctx.beginPath();
+      ctx.moveTo(x + dx, y - .45 * s); ctx.lineTo(x + dx + .3 * s, y - .15 * s); ctx.lineTo(x + dx + .85 * s, y - .8 * s);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function lock(x, y, s, color) { // padlock centred at (x, y)
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = s * .16;
+    ctx.beginPath(); ctx.arc(x, y - s * .12, s * .32, Math.PI, 0); ctx.lineTo(x + s * .32, y + s * .05); ctx.moveTo(x - s * .32, y - s * .12); ctx.lineTo(x - s * .32, y + s * .05); ctx.stroke();
+    rr(x - s * .5, y, s, s * .72, s * .12); ctx.fill();
+    ctx.restore();
+  }
+
+  /* ================================================================
+     GEO
+     ================================================================ */
+  const vec = (lon, lat) => { const p = lat * D2R, l = lon * D2R; return [Math.cos(p) * Math.cos(l), Math.cos(p) * Math.sin(l), Math.sin(p)]; };
+  const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const ang = (a, b) => Math.acos(clamp(dot3(a, b), -1, 1));
+  function slerp(a, b, k) {
+    const d = ang(a, b);
+    if (d < 1e-6) return a.slice();
+    const s = Math.sin(d), wa = Math.sin((1 - k) * d) / s, wb = Math.sin(k * d) / s;
+    return [a[0] * wa + b[0] * wb, a[1] * wa + b[1] * wb, a[2] * wa + b[2] * wb];
+  }
+  const CITY = {
+    paris: [2.35, 48.86], sthilaire: [-1.95, 46.72], leporge: [-1.2, 44.9],
+    vabeach: [-75.98, 36.85], lynn: [-70.95, 42.46], ashburn: [-77.49, 39.04],
+    montreal: [-73.57, 45.5], lyon: [4.84, 45.76], dakar: [-17.45, 14.69], saopaulo: [-46.63, -23.55],
+  };
+  const CV = Object.fromEntries(Object.entries(CITY).map(([k, c]) => [k, vec(c[0], c[1])]));
+  function makeRoute(stops) {
+    const V = stops.map(s => typeof s === 'string' ? CV[s] : vec(s[0], s[1]));
+    const pts = [V[0]], cum = [0], nodes = [];
+    let total = 0;
+    if (typeof stops[0] === 'string') nodes.push({ key: stops[0], d: 0 });
+    for (let i = 0; i < V.length - 1; i++) {
+      const n = Math.max(2, Math.ceil(ang(V[i], V[i + 1]) / (.8 * D2R)));
+      for (let k = 1; k <= n; k++) {
+        const p = slerp(V[i], V[i + 1], k / n);
+        total += ang(pts[pts.length - 1], p);
+        pts.push(p); cum.push(total);
+      }
+      if (typeof stops[i + 1] === 'string') nodes.push({ key: stops[i + 1], d: total });
+    }
+    nodes.forEach(nd => { nd.u = nd.d / total; });
+    return { pts, cum, total, km: total * 6371, nodes };
+  }
+  function routeAt(r, u) {
+    const d = clamp(u) * r.total;
+    let lo = 0, hi = r.cum.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (r.cum[m] <= d) lo = m; else hi = m; }
+    const span = r.cum[hi] - r.cum[lo] || 1, k = (d - r.cum[lo]) / span, a = r.pts[lo], b = r.pts[hi];
+    const v = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+    const n = Math.hypot(v[0], v[1], v[2]);
+    return [v[0] / n, v[1] / n, v[2] / n];
+  }
+  const R_DUNANT = makeRoute(['paris', 'sthilaire', [-8, 45.5], [-30, 41.5], [-55, 37.6], [-72, 36.4], 'vabeach', 'ashburn']);
+  const R_AMITIE = makeRoute(['paris', 'leporge', [-6, 44.7], [-20, 46.4], [-45, 46], [-64, 42.8], 'lynn', 'ashburn']);
+  const DEST = [
+    { key: 'montreal', name: 'MONTRÉAL', time: '13:42', dx: 0, dy: -30, align: 'center' },
+    { key: 'lyon', name: 'LYON', time: '19:42', dx: 18, dy: -14, align: 'left' },
+    { key: 'dakar', name: 'DAKAR', time: '17:42', dx: 0, dy: 38, align: 'center' },
+    { key: 'saopaulo', name: 'SÃO PAULO', time: '14:42', dx: -18, dy: 6, align: 'right' },
+  ];
+  DEST.forEach((d, k) => {
+    d.route = makeRoute(['ashburn', d.key]);
+    d.ts = 10.82 + k * .05;
+    d.te = d.ts + .35 + .85 * d.route.km / 7700;
+  });
+  // Packets on the first leg: even ones through Dunant, odd ones through Amitié.
+  const PK = [0, 1, 2, 3].map(i => ({ route: i % 2 ? R_AMITIE : R_DUNANT, ts: 6.95 + i * .09, te: 8.95 + i * .07 }));
+  const uPk = (p, t) => E.inOutSine(seg(t, p.ts, p.te));
+  const uDest = (d, t) => E.inOutSine(seg(t, d.ts, d.te));
+  function crossTime(fn, obj, u, a, b) { // first t in [a, b] where fn(obj, t) >= u
+    let lo = a, hi = b;
+    for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (fn(obj, m) >= u) hi = m; else lo = m; }
+    return hi;
+  }
+  const NODE_EVENTS = {};
+  const pushEvent = (key, tm) => (NODE_EVENTS[key] = NODE_EVENTS[key] || []).push(tm);
+  PK.forEach(p => p.route.nodes.forEach(nd => pushEvent(nd.key, nd.u === 0 ? p.ts : crossTime(uPk, p, nd.u, p.ts, p.te))));
+  DEST.forEach(d => pushEvent(d.key, d.te));
+  const pulseAt = (key, t, len = .7) => {
+    let best = 0;
+    for (const e of NODE_EVENTS[key] || []) { const k = (t - e) / len; if (k >= 0 && k < 1) best = Math.max(best, 1 - k); }
+    return best;
+  };
+  const LONGEST_KM = Math.round((R_DUNANT.km + DEST.find(d => d.key === 'saopaulo').route.km) / 100) * 100;
+
+  // Land dots as unit vectors.
+  const LANDV = (() => {
+    const out = [];
+    if (!LAND) return new Float32Array(0);
+    LAND.rows.forEach((runs, i) => {
+      const lat = LAND.top - i * LAND.step;
+      const n = Math.max(1, Math.round(360 * Math.cos(lat * D2R) / LAND.step));
+      for (let r = 0; r < runs.length; r += 2) {
+        for (let j = runs[r]; j < runs[r] + runs[r + 1]; j++) out.push(...vec(-180 + (j + .5) * 360 / n, lat));
+      }
+    });
+    return new Float32Array(out);
+  })();
+
+  // Camera over the globe (lon, lat, radius, screen centre).
+  const GV = {
+    lon: track([[6.75, 1.5], [7.75, -12], [9.2, -48], [10.1, -66], [10.9, -60], [11.9, -38], [13.2, -34], [15, -16]]),
+    lat: track([[6.75, 48.2], [7.75, 45], [9.2, 40], [10.1, 37], [10.9, 30], [11.9, 16], [13.2, 16], [15, 19]]),
+    lnR: track([[6.75, Math.log(9000)], [7.75, Math.log(560)], [9.2, Math.log(500)], [10.1, Math.log(500)], [10.9, Math.log(480)], [11.9, Math.log(450)], [13.2, Math.log(450)], [15, Math.log(410)]]),
+    cx: track([[6.75, 1260], [9.2, 1250], [10.1, 1160], [10.9, 1110], [11.9, 1060], [13.2, 1060], [15, 1420]]),
+    cy: track([[6.75, 610], [15, 610]]),
+  };
+  function viewAt(t) {
+    const v = { lon: GV.lon(t), lat: GV.lat(t), R: Math.exp(GV.lnR(t)), cx: GV.cx(t), cy: GV.cy(t) };
+    const a = v.lon * D2R, b = v.lat * D2R;
+    v.ca = Math.cos(a); v.sa = Math.sin(a); v.cb = Math.cos(b); v.sb = Math.sin(b);
+    return v;
+  }
+  function proj(p, v) {
+    const q = p[0] * v.ca + p[1] * v.sa;
+    const px = p[1] * v.ca - p[0] * v.sa;
+    const d = v.sb * p[2] + v.cb * q;
+    const py = v.cb * p[2] - v.sb * q;
+    return [v.cx + v.R * px, v.cy - v.R * py, d];
+  }
+
+  /* ================================================================
+     LAYOUT CACHES (reset when web fonts arrive)
+     ================================================================ */
+  let BL = null, GL = null;
+  function bubbleLayout() {
+    if (BL) return BL;
+    const fnt = font(500, 17, F.body);
+    const lines = wrap(MSG_D, 190, fnt);
+    const lw = lines.map(l => measure(l, fnt));
+    const bw = Math.max(...lw) + 30, bh = lines.length * 23 + 22;
+    const chars = [];
+    lines.forEach((l, li) => {
+      const y = -bh / 2 + 11 + 23 * li + 12;
+      for (let k = 0; k < l.length; k++) {
+        const x0 = measure(l.slice(0, k), fnt), w = measure(l[k], fnt);
+        chars.push({ ch: l[k], x: -bw / 2 + 15 + x0 + w / 2, y });
+      }
+      if (li < lines.length - 1) chars.push({ ch: ' ', x: -bw / 2 + 15 + lw[li] + 4, y });
+    });
+    return (BL = { fnt, lines, bw, bh, chars });
+  }
+  function gridLayout() {
+    if (GL) return GL;
+    const cw = measure('0', font(500, 18, F.mono)), gap = 8;
+    return (GL = { cw, gap, rowW: 56 * cw + 6 * gap, byteW: 8 * cw + gap });
+  }
+
+  /* ================================================================
+     SHARED ELEMENTS
+     ================================================================ */
+  const bgDrift = t => 18 * t + 2400 * E.inOutCubic(seg(t, 5.3, 7.0)) + 300 * E.inOutCubic(seg(t, 3.9, 5.3));
+  function drawBackground(t) {
+    ctx.fillStyle = C.ink;
+    ctx.fillRect(0, 0, W, H);
+    const g = ctx.createRadialGradient(1180, 560, 40, 1180, 560, 1150);
+    g.addColorStop(0, rgba(C.photon, .07));
+    g.addColorStop(1, rgba(C.photon, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    const sp = 48, ox = ((-bgDrift(t)) % sp + sp) % sp;
+    ctx.fillStyle = rgba(C.paper, .055);
+    ctx.beginPath();
+    for (let y = 30; y < H; y += sp) for (let x = ox; x < W; x += sp) ctx.rect(x, y, 2, 2);
+    ctx.fill();
+  }
+
+  function drawProgress(t) {
+    const x0 = 110, x1 = 1810, gap = 8, y = 52;
+    const total = x1 - x0 - gap * (SEGMENTS.length - 1);
+    let x = x0;
+    SEGMENTS.forEach(([a, b]) => {
+      const w = total * (b - a) / DUR, k = seg(t, a, b);
+      rr(x, y, w, 4, 2); ctx.fillStyle = rgba(C.paper, .12); ctx.fill();
+      if (k > 0) { rr(x, y, Math.max(4, w * k), 4, 2); ctx.fillStyle = k < 1 ? C.signal : rgba(C.paper, .55); ctx.fill(); }
+      x += w + gap;
+    });
+    text("LE TRAJET D'UN MESSAGE", 1810, 1012, { font: font(500, 14, F.mono), color: rgba(C.muted, .7), align: 'right', ls: 3 });
+  }
+
+  function drawCaptions(t) {
+    for (const c of CH) {
+      if (t < c.a || t > c.b + .05) continue;
+      const kout = E.inCubic(seg(t, c.b - .3, c.b));
+      if (kout >= 1) continue;
+      const x = 110;
+      const tf = font(600, 52, F.display), sf = font(400, 28, F.body);
+      const tl = wrap(c.title, 840, tf), sl = wrap(c.sub, 660, sf);
+      const items = [{ kind: 'label', h: 30, y: 128 }];
+      let y = 128 + 72;
+      tl.forEach(s => { items.push({ kind: 'title', s, y, h: 62 }); y += 62; });
+      y += 4;
+      sl.forEach(s => { items.push({ kind: 'sub', s, y, h: 38 }); y += 38; });
+      ctx.save();
+      ctx.globalAlpha = 1 - kout;
+      ctx.translate(0, -26 * kout);
+      items.forEach((it, i) => {
+        const k = E.outQuint(seg(t, c.a + .04 + i * .055, c.a + .64 + i * .055));
+        if (k <= 0) return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x - 20, it.y - it.h * .95, 1100, it.h * 1.3);
+        ctx.clip();
+        ctx.translate(0, (1 - k) * it.h * 1.05);
+        if (it.kind === 'label') {
+          text(c.n, x, it.y, { font: font(600, 18, F.mono), color: C.signal, ls: 3 });
+          const w = measure(c.n, font(600, 18, F.mono), 3);
+          text('/ 07', x + w + 10, it.y, { font: font(500, 18, F.mono), color: C.muted, ls: 3 });
+          ctx.fillStyle = rgba(C.paper, .25);
+          ctx.fillRect(x + w + 88, it.y - 7, 60 * k, 1.5);
+        } else if (it.kind === 'title') {
+          text(it.s, x, it.y, { font: tf, color: C.paper });
+        } else {
+          text(it.s, x, it.y, { font: sf, color: C.muted });
+        }
+        ctx.restore();
+      });
+      ctx.restore();
+    }
+  }
+
+  const RT = [[1.1, 0], [4.0, .002], [5.35, .014], [6.9, .020], [9.2, .062], [10.9, .080], [12.2, .160], [13.2, .210]];
+  function realTime(t) {
+    if (t <= RT[0][0]) return 0;
+    for (let i = 0; i < RT.length - 1; i++) if (t <= RT[i + 1][0]) return lerp(RT[i][1], RT[i + 1][1], (t - RT[i][0]) / (RT[i + 1][0] - RT[i][0]));
+    return .21;
+  }
+  const SLOWMO = Math.round((13.2 - 1.1) / .21 / 10) * 10;
+  const fr = (n, d) => n.toFixed(d).replace('.', ',');
+  const kmFr = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+  function drawClockAndOutro(t) {
+    const a = seg(t, 1.0, 1.4);
+    if (a <= 0) return;
+    const kc = E.inOutCubic(seg(t, 13.25, 13.9));
+    const y = lerp(1010, 640, kc), size = lerp(40, 176, kc);
+    const monoF = font(500, size, F.mono);
+    ctx.save();
+    ctx.globalAlpha = a;
+    const lab = 1 - seg(t, 13.2, 13.4);
+    if (lab > 0) {
+      text('TEMPS RÉEL ÉCOULÉ', 110, 960, { font: font(500, 14, F.mono), color: rgba(C.muted, lab), ls: 3 });
+      const vw = measure('0,000 s', font(500, 40, F.mono));
+      text(`ralenti ≈ ×${SLOWMO}`, 110 + vw + 22, 1008, { font: font(500, 16, F.mono), color: rgba(C.muted, lab), ls: 1 });
+    }
+    const km = seg(kc, .3, .7);
+    if (km < 1) text(fr(realTime(t), 3) + ' s', 110, y, { font: monoF, color: rgba(C.paper, 1 - km) });
+    if (km > 0) text('0,21 s', 110, y, { font: font(600, size, F.display), color: rgba(C.paper, km) });
+    ctx.restore();
+
+    if (t < 13.4) return;
+    const k1 = E.outQuint(seg(t, 13.55, 14.0));
+    text('TEMPS RÉEL DU TRAJET', 110, 432 + 14 * (1 - k1), { font: font(500, 18, F.mono), color: rgba(C.signal, k1), ls: 4 });
+    const stats = [[`≈ ${kmFr(LONGEST_KM)} km`, "jusqu'à São Paulo"], ['4', 'destinataires'], ['4', 'fuseaux horaires']];
+    let x = 110;
+    stats.forEach(([v, l], i) => {
+      const k = E.outQuint(seg(t, 13.8 + i * .12, 14.3 + i * .12));
+      const vf = font(600, 40, F.display);
+      text(v, x, 752 + 18 * (1 - k), { font: vf, color: rgba(C.paper, k) });
+      text(l, x, 788 + 18 * (1 - k), { font: font(400, 22, F.body), color: rgba(C.muted, k) });
+      x += Math.max(measure(v, vf), measure(l, font(400, 22, F.body))) + 56;
+    });
+    const k2 = E.outQuint(seg(t, 14.2, 14.7));
+    text("Le temps d'un clin d'œil.", 110, 890 + 16 * (1 - k2), { font: font(500, 34, F.body), color: rgba(C.paper, k2) });
+  }
+
+  /* ================================================================
+     PHONES
+     ================================================================ */
+  function phoneState(t) {
+    const kin = E.outQuint(seg(t, 0, .65));
+    const km = E.inOutCubic(seg(t, 1.8, 2.35));
+    const float = Math.sin(t * 2.2) * 5 * (1 - km);
+    return { x: lerp(1180, 520, km), y: lerp(590 + 80 * (1 - kin), 650, km) + float, s: lerp(1, .74, km) * lerp(.94, 1, kin), a: kin };
+  }
+  const toScreen = (P, lx, ly) => [P.x + lx * P.s, P.y + ly * P.s];
+
+  function phoneShell(statusTime, members) {
+    rr(-170, -345, 340, 690, 54); ctx.fillStyle = C.void; ctx.fill();
+    ctx.strokeStyle = rgba(C.paper, .22); ctx.lineWidth = 2.5; ctx.stroke();
+    rr(-158, -333, 316, 666, 44); ctx.fillStyle = C.ink2; ctx.fill();
+    rr(-44, -320, 88, 26, 13); ctx.fillStyle = C.void; ctx.fill();
+    text(statusTime, -118, -300, { font: font(600, 17, F.body), color: C.paper, base: 'middle' });
+    for (let i = 0; i < 4; i++) { ctx.fillStyle = C.paper; ctx.fillRect(66 + i * 6, -296 - i * 3, 4, 6 + i * 3); }
+    text('5G', 94, -300, { font: font(600, 13, F.body), color: C.paper, base: 'middle' });
+    rr(116, -307, 26, 13, 4); ctx.strokeStyle = rgba(C.paper, .8); ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = C.paper; ctx.fillRect(119, -304, 17, 7);
+    [[C.radio, -128], [C.photon, -112], [C.signal, -96]].forEach(([col, x]) => {
+      ctx.beginPath(); ctx.arc(x, -246, 14, 0, TAU); ctx.fillStyle = col; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = C.ink2; ctx.stroke();
+    });
+    text('Groupe · 5 membres', -72, -252, { font: font(600, 17, F.body), color: C.paper, base: 'middle' });
+    text(members, -72, -231, { font: font(400, 13, F.body), color: C.muted, base: 'middle' });
+    ctx.fillStyle = rgba(C.paper, .08); ctx.fillRect(-158, -208, 316, 1.5);
+    const q = 'Qui est dispo ce soir ?', qf = font(500, 16, F.body), qw = measure(q, qf);
+    rr(-140, -186, qw + 28, 40, 16); ctx.fillStyle = C.line; ctx.fill();
+    text(q, -126, -165, { font: qf, color: C.paper, base: 'middle' });
+  }
+
+  function drawSentBubble(cx, cy, s, bgA, textA) {
+    const L = bubbleLayout();
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    if (bgA > 0) {
+      ctx.save();
+      ctx.globalAlpha *= bgA;
+      rr(-L.bw / 2, -L.bh / 2, L.bw, L.bh, 18); ctx.fillStyle = C.signal; ctx.fill();
+      ctx.restore();
+    }
+    if (textA > 0) L.lines.forEach((l, i) => text(l, -L.bw / 2 + 15, -L.bh / 2 + 11 + 23 * i + 12, { font: L.fnt, color: rgba(C.ink, textA), base: 'middle' }));
+    ctx.restore();
+  }
+  function sentBubbleLocal() { const L = bubbleLayout(); return { x: 140 - L.bw / 2, y: -96 }; }
+
+  function drawSenderPhone(t, P) {
+    if (P.a <= 0) return;
+    ctx.save();
+    ctx.globalAlpha *= P.a;
+    ctx.translate(P.x, P.y);
+    ctx.scale(P.s, P.s);
+    phoneShell('19:42', 'Montréal, Lyon, Dakar, São Paulo');
+    // input field + typing
+    const typed = Math.floor(MSG_D.length * seg(t, .4, 1.02));
+    const sent = t >= 1.12;
+    rr(-142, 244, 234, 46, 23); ctx.fillStyle = C.void; ctx.fill();
+    ctx.save();
+    rr(-142, 244, 234, 46, 23); ctx.clip();
+    const tf = font(500, 16, F.body);
+    if (!sent && typed > 0) {
+      const s = MSG_D.slice(0, typed), w = measure(s, tf), off = Math.max(0, w - 196);
+      text(s, -126 - off, 267, { font: tf, color: C.paper, base: 'middle' });
+      if (Math.floor(t * 3) % 2 === 0 || t < 1.02) { ctx.fillStyle = C.signal; ctx.fillRect(-124 - off + w, 256, 2, 22); }
+    } else {
+      text('Message', -126, 267, { font: tf, color: rgba(C.muted, .7), base: 'middle' });
+    }
+    ctx.restore();
+    // send button + tap ripple
+    const press = 1 - .16 * Math.sin(Math.PI * seg(t, 1.02, 1.22));
+    ctx.save();
+    ctx.translate(124, 267); ctx.scale(press, press);
+    ctx.beginPath(); ctx.arc(0, 0, 23, 0, TAU); ctx.fillStyle = C.signal; ctx.fill();
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 9); ctx.lineTo(0, -9); ctx.moveTo(-7, -2); ctx.lineTo(0, -9); ctx.lineTo(7, -2); ctx.stroke();
+    ctx.restore();
+    const rk = seg(t, 1.04, 1.5);
+    if (rk > 0 && rk < 1) {
+      ctx.beginPath(); ctx.arc(124, 267, 23 + 60 * E.outCubic(rk), 0, TAU);
+      ctx.strokeStyle = rgba(C.paper, .6 * (1 - rk)); ctx.lineWidth = 3; ctx.stroke();
+    }
+    // sent bubble
+    if (sent) {
+      const k = E.outBack(seg(t, 1.12, 1.5));
+      const B = sentBubbleLocal();
+      drawSentBubble(lerp(40, B.x, k), lerp(267, B.y, k), lerp(.6, 1, clamp(k)), clamp(k * 1.4), 1);
+      const ck = seg(t, 1.45, 1.6);
+      if (ck > 0) {
+        const L = bubbleLayout();
+        ctx.save(); ctx.globalAlpha *= ck;
+        text('19:42', 104, B.y + L.bh / 2 + 18, { font: font(500, 12, F.body), color: C.muted, align: 'right', base: 'middle' });
+        checks(110, B.y + L.bh / 2 + 23, 13, C.photon);
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  /* ================================================================
+     SCENE 2 · bits and packets (inside the phone)
+     ================================================================ */
+  const PANEL = { x: 850, y: 310, w: 930, h: 560, cx: 1315, cy: 590 };
+  function panelTransform(t) {
+    // 1 = panel at full size, 0 = shrunk onto the phone screen
+    const kOpen = E.outCubic(seg(t, 1.82, 2.3));
+    const kClose = E.inOutCubic(seg(t, 3.62, 3.98));
+    const k = kOpen * (1 - kClose);
+    const P = phoneState(t);
+    const sx = lerp(P.x, PANEL.cx, k), sy = lerp(P.y, PANEL.cy, k), s = lerp(316 * P.s / PANEL.w, 1, k);
+    return { k, sx, sy, s, a: seg(t, 1.82, 1.95) * (1 - seg(t, 3.84, 3.98)) };
+  }
+  function slotX(x0, j, bit) { const g = gridLayout(); return x0 + j * g.byteW + bit * g.cw + g.cw / 2; }
+
+  function drawPanel(t) {
+    const T = panelTransform(t);
+    if (T.a <= 0) return;
+    const P = phoneState(t);
+    const g = gridLayout();
+    // magnifier cone from the phone screen to the panel
+    const pr = toScreen(P, 158, -333), pb = toScreen(P, 158, 333);
+    const pl = [T.sx - PANEL.w / 2 * T.s, T.sy - PANEL.h / 2 * T.s], pl2 = [pl[0], T.sy + PANEL.h / 2 * T.s];
+    ctx.save();
+    ctx.globalAlpha *= T.a * .9;
+    ctx.beginPath(); ctx.moveTo(pr[0], pr[1]); ctx.lineTo(pl[0], pl[1]); ctx.lineTo(pl2[0], pl2[1]); ctx.lineTo(pb[0], pb[1]); ctx.closePath();
+    ctx.fillStyle = rgba(C.paper, .035); ctx.fill();
+    ctx.setLineDash([4, 8]); ctx.strokeStyle = rgba(C.paper, .22); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(pr[0], pr[1]); ctx.lineTo(pl[0], pl[1]); ctx.moveTo(pb[0], pb[1]); ctx.lineTo(pl2[0], pl2[1]); ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha *= T.a;
+    ctx.translate(T.sx, T.sy); ctx.scale(T.s, T.s); ctx.translate(-PANEL.cx, -PANEL.cy);
+    rr(PANEL.x, PANEL.y, PANEL.w, PANEL.h, 22); ctx.fillStyle = C.ink2; ctx.fill();
+    ctx.strokeStyle = rgba(C.paper, .16); ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.save(); rr(PANEL.x, PANEL.y, PANEL.w, PANEL.h, 22); ctx.clip();
+    text('DANS TON TÉLÉPHONE', PANEL.x + 32, PANEL.y + 44, { font: font(500, 15, F.mono), color: C.muted, ls: 3 });
+
+    const x0a = PANEL.cx - g.rowW / 2, x0b = PANEL.cx - (192 + g.rowW + 16) / 2 + 192;
+    const kb = E.inOutCubic(seg(t, 3.05, 3.45));
+    const letterA = 1 - seg(t, 3.02, 3.2);
+    const rowY = r => lerp(440 + r * 70, 405 + r * 84, kb);
+    const rowX = lerp(x0a, x0b, kb);
+
+    // packet frames
+    for (let r = 0; r < 4; r++) {
+      const kf = E.outQuint(seg(t, 3.15 + r * .05, 3.55 + r * .05));
+      if (kf <= 0) continue;
+      const y = rowY(r), bytes = BYTES.filter((_, i) => PACKET_OF[i] === r).length;
+      const left = rowX - 192, w = 192 + bytes * g.byteW - g.gap + 16;
+      ctx.save();
+      ctx.globalAlpha *= kf;
+      rr(left, y - 26, w, 52, 10); ctx.fillStyle = rgba(C.signal, .08); ctx.fill();
+      ctx.strokeStyle = rgba(C.signal, .8); ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.save(); rr(left, y - 26, 176 * kf, 52, 10); ctx.clip();
+      rr(left, y - 26, 176, 52, 10); ctx.fillStyle = C.signal; ctx.fill();
+      text(`PAQUET ${r + 1}/4`, left + 14, y - 6, { font: font(600, 14, F.mono), color: C.ink, ls: 1 });
+      text(`→ ${DEST_IP}`, left + 14, y + 14, { font: font(500, 13, F.mono), color: C.ink });
+      ctx.restore();
+      ctx.restore();
+    }
+
+    // flying letters then unfolding bits
+    const L = bubbleLayout();
+    const bubbleEnd = { x: PANEL.cx, y: 520, s: 1.9 };
+    const bf = font(500, 18, F.mono);
+    BYTES.forEach((b, i) => {
+      const r = PACKET_OF[i], j = i % 7;
+      const ch = L.chars[i] || { ch: ' ', x: 0, y: 0 };
+      const kl = E.inOutCubic(seg(t, 2.3 + i * .012, 2.64 + i * .012));
+      const lx = slotX(rowX, j, 3.5), ly = rowY(r) - 30;
+      if (kl > 0 && letterA > 0 && ch.ch.trim()) {
+        const sx = bubbleEnd.x + ch.x * bubbleEnd.s, sy = bubbleEnd.y + ch.y * bubbleEnd.s;
+        const size = lerp(17 * bubbleEnd.s, 19, kl);
+        const col = kl < 1 ? mixHex(C.ink, C.radio, kl) : C.radio;
+        ctx.save(); ctx.globalAlpha *= letterA;
+        text(ch.ch, lerp(sx, lx, kl), lerp(sy, ly, kl) - Math.sin(Math.PI * kl) * 40, { font: font(600, size, kl > .5 ? F.mono : F.body), color: col, align: 'center', base: 'middle' });
+        ctx.restore();
+      }
+      const kbits = E.outCubic(seg(t, 2.48 + i * .012, 2.72 + i * .012));
+      if (kbits > 0) {
+        for (let k = 0; k < 8; k++) {
+          const flick = kbits < 1 && hash(i * 8 + k, Math.floor(t * 30)) > .5;
+          const ch2 = flick ? (BITS[i][k] === '1' ? '0' : '1') : BITS[i][k];
+          text(ch2, slotX(rowX, j, k), rowY(r) - 16 * (1 - kbits), {
+            font: bf, color: rgba(kb > 0 ? mixHex(C.paper, C.signal, kb * .35) : C.paper, kbits * .92), align: 'center', base: 'middle',
+          });
+        }
+      }
+    });
+    // summary line
+    const ks = E.outQuint(seg(t, 3.25, 3.6));
+    if (ks > 0) text(`${BYTES.length} caractères  →  ${BYTES.length * 8} bits  →  4 paquets`, PANEL.cx, 800 + 10 * (1 - ks), { font: font(500, 18, F.mono), color: rgba(C.muted, ks), align: 'center' });
+    ctx.restore();
+    ctx.restore();
+
+    // the bubble flying out of the phone into the panel (drawn above the panel)
+    const kf = E.inOutCubic(seg(t, 1.86, 2.3));
+    if (t >= 1.86 && t < 2.55) {
+      const P0 = phoneState(1.86), B = sentBubbleLocal();
+      const s0 = toScreen(P0, B.x, B.y);
+      const bgA = 1 - seg(t, 2.3, 2.5);
+      const textA = t < 2.3 ? 1 : 0;
+      const bx = lerp(s0[0], bubbleEnd.x, kf), by = lerp(s0[1], bubbleEnd.y, kf) - Math.sin(Math.PI * kf) * 60;
+      ctx.save(); ctx.globalAlpha *= T.a;
+      ctx.save(); ctx.globalAlpha *= .45 * Math.sin(Math.PI * kf);
+      glow(GLOW.signal, bx, by, 240);
+      ctx.restore();
+      drawSentBubble(bx, by, lerp(P0.s, bubbleEnd.s, kf), bgA, textA);
+      ctx.restore();
+    }
+  }
+
+  /* ================================================================
+     SCENE 3 · radio waves to the tower
+     ================================================================ */
+  const ANT = [520, 395], TOWER = { x: 1540, base: 906, top: 320 }, TOWER_IN = [1540, 334];
+  function drawTower(t, k) {
+    const { x, base, top } = TOWER;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, W, base); ctx.clip();
+    ctx.translate(0, (1 - k) * (base - top + 60));
+    ctx.strokeStyle = rgba(C.paper, .6); ctx.lineWidth = 3; ctx.lineCap = 'round';
+    const lx = y => lerp(x - 48, x - 12, (base - y) / (base - top - 40)), rx = y => 2 * x - lx(y);
+    ctx.beginPath(); ctx.moveTo(x - 48, base); ctx.lineTo(x - 12, top + 40); ctx.moveTo(x + 48, base); ctx.lineTo(x + 12, top + 40); ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = rgba(C.paper, .35);
+    ctx.beginPath();
+    const n = 11;
+    for (let i = 0; i < n; i++) {
+      const y1 = lerp(base, top + 40, i / n), y2 = lerp(base, top + 40, (i + 1) / n);
+      ctx.moveTo(lx(y1), y1); ctx.lineTo(rx(y2), y2); ctx.moveTo(rx(y1), y1); ctx.lineTo(lx(y2), y2);
+      ctx.moveTo(lx(y2), y2); ctx.lineTo(rx(y2), y2);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = rgba(C.paper, .6); ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x, top + 40); ctx.lineTo(x, top - 18); ctx.moveTo(x - 36, top + 22); ctx.lineTo(x + 36, top + 22); ctx.stroke();
+    const flash = Math.max(...[0, 1, 2, 3].map(i => { const d = t - (4.0 + i * .11 + .58); return d >= 0 && d < .3 ? 1 - d / .3 : 0; }));
+    [-30, 0, 30].forEach(dx => {
+      rr(x + dx - 7, top - 4, 14, 52, 4);
+      ctx.fillStyle = flash > 0 ? mixHex(C.ink2, C.radio, flash) : C.ink2; ctx.fill();
+      ctx.strokeStyle = rgba(C.paper, .7); ctx.lineWidth = 1.5; ctx.stroke();
+    });
+    if (flash > 0) glow(GLOW.radio, x, top + 20, 90, flash * .7);
+    const blink = Math.floor(t * 2.4) % 2 === 0;
+    ctx.beginPath(); ctx.arc(x, top - 22, 5, 0, TAU); ctx.fillStyle = blink ? C.signal : rgba(C.signal, .3); ctx.fill();
+    if (blink) glow(GLOW.signal, x, top - 22, 22, .8);
+    ctx.restore();
+  }
+  function drawPacketSquare(x, y, size, n, colorK = 0, alpha = 1, rot = 0) {
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    ctx.translate(x, y); ctx.rotate(rot);
+    rr(-size / 2, -size / 2, size, size, size * .24);
+    ctx.fillStyle = colorK > 0 ? mixHex(C.signal, C.photon, colorK) : C.signal; ctx.fill();
+    if (size > 20 && colorK < .5) text(String(n), 0, 1, { font: font(600, size * .46, F.display), color: C.ink, align: 'center', base: 'middle' });
+    ctx.restore();
+  }
+
+  function drawRadioScene(t, sf) {
+    if (t < 3.6) return;
+    ctx.save();
+    ctx.globalAlpha *= sf;
+    const kg = E.inOutCubic(seg(t, 3.7, 4.25));
+    ctx.strokeStyle = rgba(C.paper, .25); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(80, TOWER.base); ctx.lineTo(lerp(80, 1840, kg), TOWER.base); ctx.stroke();
+    if (kg > 0) {
+      ctx.fillStyle = rgba(C.paper, .12);
+      for (let x = 100; x < lerp(80, 1840, kg); x += 40) ctx.fillRect(x, TOWER.base + 8, 16, 2);
+    }
+    drawTower(t, E.outQuint(seg(t, 3.8, 4.35)));
+    ctx.restore();
+
+    // underground fibre from the tower base
+    const kc = E.inOutCubic(seg(t, 4.7, 5.0));
+    if (kc > 0) {
+      ctx.strokeStyle = rgba(C.photon, .75); ctx.lineWidth = 4; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(TOWER.x, TOWER.base);
+      const down = Math.min(1, kc * 3.5);
+      ctx.lineTo(TOWER.x, TOWER.base + 56 * down);
+      if (kc > .28) ctx.lineTo(lerp(TOWER.x, W + 20, (kc - .28) / .72), TOWER.base + 56);
+      ctx.stroke();
+      text('FIBRE OPTIQUE', 1582, TOWER.base + 38, { font: font(500, 16, F.mono), color: rgba(C.photon, kc * sf), ls: 3 });
+    }
+
+    // radio waves
+    const dir = Math.atan2(TOWER_IN[1] - ANT[1], TOWER_IN[0] - ANT[0]);
+    const waveEnv = seg(t, 3.95, 4.05) * (1 - seg(t, 4.85, 5.05)) * sf;
+    for (let k = 0; k < 9; k++) {
+      const te = 4.0 + k * .12, r = (t - te) * 1500;
+      if (r <= 8 || r > 1120) continue;
+      ctx.beginPath(); ctx.arc(ANT[0], ANT[1], r, dir - .42, dir + .42);
+      ctx.strokeStyle = rgba(C.radio, .8 * (1 - r / 1120) * waveEnv); ctx.lineWidth = 3.5; ctx.lineCap = 'round'; ctx.stroke();
+    }
+    const kl = seg(t, 4.2, 4.45) * (1 - seg(t, 5.0, 5.2)) * sf;
+    if (kl > 0) {
+      text('5G · 3,5 GHz', 1030, 318, { font: font(600, 20, F.mono), color: rgba(C.radio, kl), align: 'center', ls: 2 });
+      text('ANTENNE-RELAIS', 1606, 600, { font: font(500, 16, F.mono), color: rgba(C.muted, kl), ls: 3 });
+      text('TON TÉLÉPHONE', 520, 952, { font: font(500, 16, F.mono), color: rgba(C.muted, kl), align: 'center', ls: 3 });
+    }
+
+    // packets: phone → tower (riding the wave), down the mast, into the fibre
+    const nx = -(TOWER_IN[1] - ANT[1]), ny = TOWER_IN[0] - ANT[0], nl = Math.hypot(nx, ny);
+    for (let i = 0; i < 4; i++) {
+      const ts = 4.0 + i * .11, te = ts + .58;
+      if (t < ts) continue;
+      const kd = E.inCubic(seg(t, 4.88 + i * .05, 5.08 + i * .05));
+      if (kd <= 0) {
+        const u = E.inOutSine(seg(t, ts, te));
+        const w = Math.sin(u * Math.PI * 3) * 26 * (1 - u * .6) * (u < 1 ? 1 : 0);
+        const x = lerp(ANT[0], TOWER_IN[0], u) + nx / nl * w, y = lerp(ANT[1], TOWER_IN[1], u) + ny / nl * w;
+        for (let g = 4; g >= 1; g--) {
+          const ug = Math.max(0, u - g * .035);
+          const wg = Math.sin(ug * Math.PI * 3) * 26 * (1 - ug * .6);
+          drawPacketSquare(lerp(ANT[0], TOWER_IN[0], ug) + nx / nl * wg, lerp(ANT[1], TOWER_IN[1], ug) + ny / nl * wg, 44 - g * 5, i + 1, 0, .12 * (5 - g) * (u < 1 ? 1 : 0));
+        }
+        drawPacketSquare(x, y, 44 * lerp(.5, 1, seg(u, 0, .15)), i + 1, 0, 1, Math.sin(u * TAU) * .15);
+      } else {
+        const done = t - (5.08 + i * .05);
+        let x = TOWER.x, y = lerp(TOWER_IN[1], TOWER.base + 56, kd);
+        if (done > 0) { x += done * 1500; y = TOWER.base + 56; }
+        const size = lerp(44, 14, kd);
+        if (kd > .5) glow(GLOW.photon, x, y, 40, kd);
+        drawPacketSquare(x, y, size, i + 1, kd);
+      }
+    }
+  }
+
+  /* ================================================================
+     SCENE 4 · light inside the fibre
+     ================================================================ */
+  const STREAKS = (() => { const r = rng(7); return Array.from({ length: 34 }, () => ({ y: 120 + r() * 880, x: r() * W, len: 90 + r() * 260, a: .05 + r() * .12, v: 1800 + r() * 1600 })); })();
+  function drawFiber(t) {
+    const a = seg(t, 5.28, 5.45) * (1 - seg(t, 6.85, 7.02));
+    if (a <= 0) return;
+    const kin = E.outQuint(seg(t, 5.3, 5.8)), kout = E.inOutCubic(seg(t, 6.62, 6.98));
+    const cy = 620, sy = lerp(.03, 1, kin) * (1 - .97 * kout);
+    ctx.save();
+    ctx.globalAlpha *= a;
+    // speed streaks
+    const sa = seg(t, 5.35, 5.6) * (1 - seg(t, 6.6, 6.9));
+    ctx.lineWidth = 2; ctx.lineCap = 'round';
+    STREAKS.forEach(s => {
+      const x = ((s.x + (t - 5.3) * s.v) % (W + s.len * 2)) - s.len;
+      ctx.strokeStyle = rgba(C.photon, s.a * sa);
+      ctx.beginPath(); ctx.moveTo(x, s.y); ctx.lineTo(x + s.len, s.y); ctx.stroke();
+    });
+    ctx.save();
+    ctx.translate(0, cy); ctx.scale(1, sy); ctx.translate(0, -cy);
+    // jacket
+    ctx.fillStyle = C.ink2; ctx.fillRect(-10, cy - 110, W + 20, 220);
+    ctx.fillStyle = rgba(C.paper, .03);
+    for (let x = ((-(t - 5.3) * 300) % 60) - 60; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, cy - 110); ctx.lineTo(x + 30, cy - 110); ctx.lineTo(x + 70, cy - 60); ctx.lineTo(x + 40, cy - 60); ctx.fill(); }
+    ctx.fillStyle = rgba(C.paper, .2); ctx.fillRect(-10, cy - 111, W + 20, 1.5); ctx.fillRect(-10, cy + 110, W + 20, 1.5);
+    // cladding (glass)
+    const cg = ctx.createLinearGradient(0, cy - 58, 0, cy + 58);
+    cg.addColorStop(0, rgba(C.photon, .16)); cg.addColorStop(.3, rgba(C.photon, .05)); cg.addColorStop(1, rgba(C.photon, .09));
+    ctx.fillStyle = cg; ctx.fillRect(-10, cy - 58, W + 20, 116);
+    ctx.fillStyle = rgba(C.photon, .3); ctx.fillRect(-10, cy - 59, W + 20, 1.5); ctx.fillRect(-10, cy + 58, W + 20, 1.5);
+    // core
+    ctx.fillStyle = rgba(C.photon, .1); ctx.fillRect(-10, cy - 28, W + 20, 56);
+    ctx.fillStyle = rgba(C.photon, .55); ctx.fillRect(-10, cy - 29, W + 20, 1.5); ctx.fillRect(-10, cy + 28, W + 20, 1.5);
+    // light pulses (each packet = a train of on/off flashes zig-zagging by total internal reflection)
+    const zy = x => cy + 24 * tri(x / 150);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let i = 0; i < 4; i++) {
+      const head = -140 + (t - 5.36 - i * .2) * 1700;
+      if (head < -20 || head - 900 > W) continue;
+      // faint light path behind the train
+      for (let s = 0; s < 12; s++) {
+        const x1 = head - 280 - s * 50, x2 = x1 + 50;
+        ctx.strokeStyle = rgba(C.photon, .22 * (1 - s / 12)); ctx.lineWidth = 2;
+        ctx.beginPath(); for (let x = x1; x <= x2; x += 5) (x === x1 ? ctx.moveTo(x, zy(x)) : ctx.lineTo(x, zy(x))); ctx.stroke();
+      }
+      const bits = BITS[i * 7];
+      for (let j = 0; j < 8; j++) {
+        const x = head - j * 34;
+        if (bits[j] === '1') {
+          ctx.save(); ctx.globalCompositeOperation = 'lighter';
+          ctx.strokeStyle = rgba(C.photon, .28); ctx.lineWidth = 14;
+          ctx.beginPath(); for (let xx = x - 12; xx <= x + 12; xx += 4) (xx === x - 12 ? ctx.moveTo(xx, zy(xx)) : ctx.lineTo(xx, zy(xx))); ctx.stroke();
+          ctx.restore();
+          ctx.strokeStyle = C.paper; ctx.lineWidth = 4.5;
+          ctx.beginPath(); for (let xx = x - 11; xx <= x + 11; xx += 4) (xx === x - 11 ? ctx.moveTo(xx, zy(xx)) : ctx.lineTo(xx, zy(xx))); ctx.stroke();
+        } else {
+          ctx.fillStyle = rgba(C.photon, .35); ctx.beginPath(); ctx.arc(x, zy(x), 2.5, 0, TAU); ctx.fill();
+        }
+      }
+      glow(GLOW.photon, head, zy(head), 46, .9);
+    }
+    ctx.restore();
+
+    // annotations
+    const lab = (k0, draw) => { const k = E.outQuint(seg(t, k0, k0 + .35)) * (1 - seg(t, 6.52, 6.7)); if (k > 0) { ctx.save(); ctx.globalAlpha *= k; draw(k); ctx.restore(); } };
+    const leader = (x, y1, y2) => { ctx.strokeStyle = rgba(C.paper, .45); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y1); ctx.lineTo(x, y2); ctx.stroke(); ctx.beginPath(); ctx.arc(x, y1, 4, 0, TAU); ctx.fillStyle = C.paper; ctx.fill(); };
+    lab(5.6, k => { leader(300, cy - 100, cy - 150 - 10 * k); text('GAINE DE PROTECTION', 300, cy - 172, { font: font(500, 16, F.mono), color: C.muted, align: 'center', ls: 2 }); });
+    lab(5.72, k => { leader(760, cy + 6, cy + 150 + 10 * k); text('CŒUR EN VERRE', 760, cy + 186, { font: font(500, 16, F.mono), color: C.photon, align: 'center', ls: 2 }); });
+    lab(5.84, k => { leader(1180, cy - 40, cy - 150 - 10 * k); text('LA LUMIÈRE REBONDIT SUR LES PAROIS', 1180, cy - 172, { font: font(500, 16, F.mono), color: C.muted, align: 'center', ls: 2 }); });
+    lab(5.96, () => {
+      const x = 1660;
+      ctx.strokeStyle = C.paper; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, cy - 58); ctx.lineTo(x, cy + 58); ctx.moveTo(x - 9, cy - 58); ctx.lineTo(x + 9, cy - 58); ctx.moveTo(x - 9, cy + 58); ctx.lineTo(x + 9, cy + 58); ctx.stroke();
+      text('Ø 0,125 mm', x + 20, cy + 7, { font: font(600, 18, F.mono), color: C.paper, base: 'middle' });
+    });
+    lab(6.05, k => {
+      text('≈ 200 000 km/s', 1810, cy + 214 + 12 * (1 - k), { font: font(600, 44, F.display), color: C.photon, align: 'right' });
+      text('LA VITESSE DE LA LUMIÈRE DANS LE VERRE', 1810, cy + 250 + 12 * (1 - k), { font: font(500, 15, F.mono), color: C.muted, align: 'right', ls: 2 });
+    });
+    ctx.restore();
+  }
+
+  /* ================================================================
+     SCENES 5–8 · the globe
+     ================================================================ */
+  function drawGlobe(v, alpha) {
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    if (v.R < 2600) {
+      const halo = ctx.createRadialGradient(v.cx, v.cy, v.R * .92, v.cx, v.cy, v.R * 1.28);
+      halo.addColorStop(0, rgba(C.photon, .12)); halo.addColorStop(1, rgba(C.photon, 0));
+      ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(v.cx, v.cy, v.R * 1.28, 0, TAU); ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(v.cx, v.cy, v.R, 0, TAU);
+    ctx.fillStyle = C.ink2; ctx.fill();
+    const g = ctx.createRadialGradient(v.cx - v.R * .35, v.cy - v.R * .4, v.R * .05, v.cx, v.cy, v.R);
+    g.addColorStop(0, rgba(C.photon, .09)); g.addColorStop(1, rgba(C.photon, 0));
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = rgba(C.photon, .28); ctx.lineWidth = 1.5; ctx.stroke();
+    const r = clamp(v.R * .0052, 1.1, 7);
+    const paths = [new Path2D(), new Path2D(), new Path2D()];
+    for (let i = 0; i < LANDV.length; i += 3) {
+      const x = LANDV[i], y = LANDV[i + 1], z = LANDV[i + 2];
+      const q = x * v.ca + y * v.sa, d = v.sb * z + v.cb * q;
+      if (d <= .02) continue;
+      const sx = v.cx + v.R * (y * v.ca - x * v.sa), sy = v.cy - v.R * (v.cb * z - v.sb * q);
+      if (sx < -10 || sx > W + 10 || sy < -10 || sy > H + 10) continue;
+      const b = d < .35 ? 0 : d < .7 ? 1 : 2, rr2 = r * (.6 + .4 * d);
+      paths[b].moveTo(sx + rr2, sy); paths[b].arc(sx, sy, rr2, 0, TAU);
+    }
+    [.3, .5, .72].forEach((al, b) => { ctx.fillStyle = rgba(C.muted, al); ctx.fill(paths[b]); });
+    ctx.restore();
+  }
+  function strokeRoute(r, v, u0, u1, style, width) {
+    if (u1 <= u0) return;
+    const d0 = u0 * r.total, d1 = u1 * r.total;
+    ctx.beginPath();
+    let pen = false;
+    const add = p => { const s = proj(p, v); if (s[2] > 0) { pen ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); pen = true; } else pen = false; };
+    add(routeAt(r, u0));
+    for (let i = 0; i < r.pts.length; i++) if (r.cum[i] > d0 && r.cum[i] < d1) add(r.pts[i]);
+    add(routeAt(r, u1));
+    ctx.strokeStyle = style; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+  }
+  function comet(r, u, v, size, label) {
+    const trail = Math.min(u, 8 * D2R / r.total), N = 14;
+    let prev = null;
+    for (let j = N; j >= 0; j--) {
+      const s = proj(routeAt(r, u - trail * j / N), v);
+      if (prev && s[2] > 0 && prev[2] > 0) {
+        ctx.strokeStyle = rgba(C.photon, .85 * (1 - j / N)); ctx.lineWidth = size * (1 - j / N) + .6; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(s[0], s[1]); ctx.stroke();
+      }
+      prev = s;
+    }
+    const h = proj(routeAt(r, u), v);
+    if (h[2] > 0) {
+      glow(GLOW.photon, h[0], h[1], size * 5.5);
+      ctx.beginPath(); ctx.arc(h[0], h[1], size * .6, 0, TAU); ctx.fillStyle = C.paper; ctx.fill();
+      if (label) text(label, h[0] + 10, h[1] - 12, { font: font(600, 14, F.mono), color: C.paper });
+    }
+    return h;
+  }
+  function geoNode(key, v, t, a = 1) {
+    const s = proj(CV[key], v);
+    if (s[2] < .05 || a <= 0) return s;
+    const pulse = pulseAt(key, t);
+    ctx.save();
+    ctx.globalAlpha *= a * clamp(s[2] * 4);
+    if (pulse > 0) {
+      ctx.beginPath(); ctx.arc(s[0], s[1], 6 + 30 * (1 - pulse), 0, TAU);
+      ctx.strokeStyle = rgba(C.photon, .8 * pulse); ctx.lineWidth = 2; ctx.stroke();
+      glow(GLOW.photon, s[0], s[1], 26, pulse * .8);
+    }
+    ctx.translate(s[0], s[1]); ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = C.ink; ctx.fillRect(-5, -5, 10, 10);
+    ctx.strokeStyle = pulse > 0 ? C.photon : rgba(C.paper, .8); ctx.lineWidth = 2; ctx.strokeRect(-5, -5, 10, 10);
+    ctx.restore();
+    return s;
+  }
+  function geoLabel(key, v, str, a, dx, dy, align = 'left', color = C.paper, size = 15) {
+    const s = proj(CV[key], v);
+    const k = a * clamp((s[2] - .1) * 5);
+    if (k <= 0) return;
+    text(str, s[0] + dx, s[1] + dy, { font: font(500, size, F.mono), color: rgba(color, k), align, base: 'middle', ls: 2 });
+  }
+
+  const CARD = { x: 1410, y: 250, w: 440, h: 400 };
+  function drawDataCenter(t, v) {
+    const A = proj(CV.ashburn, v);
+    const kin = E.outBack(seg(t, 9.25, 9.62)), kc = E.inBack(seg(t, 10.62, 10.92));
+    const k = clamp(kin, 0, 1.2) * (1 - kc);
+    const a = seg(t, 9.25, 9.35) * (1 - seg(t, 10.8, 10.92));
+    if (a <= 0) return;
+    const ccx = CARD.x + CARD.w / 2, ccy = CARD.y + CARD.h / 2;
+    const ox = lerp(A[0], ccx, k), oy = lerp(A[1], ccy, k);
+    const entry = [lerp(A[0], CARD.x, k), lerp(A[1], CARD.y + 200, k)];
+    // leader
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.setLineDash([3, 7]); ctx.strokeStyle = rgba(C.photon, .6); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(entry[0], entry[1]); ctx.stroke(); ctx.setLineDash([]);
+    // card
+    ctx.save();
+    ctx.translate(ox, oy); ctx.scale(k, k); ctx.translate(-ccx, -ccy);
+    ctx.shadowColor = rgba(C.void, .8); ctx.shadowBlur = 40; ctx.shadowOffsetY = 18;
+    rr(CARD.x, CARD.y, CARD.w, CARD.h, 20); ctx.fillStyle = C.ink2; ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = rgba(C.photon, .35); ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.translate(CARD.x, CARD.y);
+    text('DATA CENTER', 26, 42, { font: font(500, 14, F.mono), color: C.muted, ls: 3 });
+    text('Ashburn, Virginie', 26, 74, { font: font(600, 23, F.body), color: C.paper });
+    // racks
+    const busy = seg(t, 9.7, 9.8) * (1 - seg(t, 10.3, 10.5));
+    for (let rk = 0; rk < 3; rk++) {
+      const rx = 276 + rk * 52;
+      rr(rx, 106, 44, 234, 6); ctx.fillStyle = C.void; ctx.fill();
+      for (let u = 0; u < 9; u++) {
+        const uy = 113 + u * 25.5;
+        rr(rx + 5, uy, 34, 20, 3); ctx.fillStyle = C.line; ctx.fill();
+        for (let l = 0; l < 2; l++) {
+          const on = hash(rk * 20 + u * 2 + l, Math.floor(t * (6 + busy * 14) + rk * 1.7 + u)) > .45 - busy * .25;
+          const col = (rk + u + l) % 7 === 0 ? C.signal : C.photon;
+          ctx.fillStyle = on ? col : rgba(col, .15);
+          ctx.beginPath(); ctx.arc(rx + 29 - l * 8, uy + 10, 2.4, 0, TAU); ctx.fill();
+        }
+      }
+    }
+    // incoming packets converge and merge into one encrypted message
+    const merge = E.outBack(seg(t, 9.72, 9.95));
+    const dup = E.inOutCubic(seg(t, 10.05, 10.4));
+    const leave = E.inCubic(seg(t, 10.42, 10.6));
+    for (let i = 0; i < 4; i++) {
+      const kp = E.inOutCubic(seg(t, 9.45 + i * .05, 9.72 + i * .05));
+      if (kp <= 0 || merge >= 1) continue;
+      const px = lerp(0, 130, kp), py = 200 + (i - 1.5) * 26 * (1 - kp);
+      ctx.save(); ctx.globalAlpha *= 1 - clamp(merge);
+      glow(GLOW.photon, px, py, 26); ctx.beginPath(); ctx.arc(px, py, 5, 0, TAU); ctx.fillStyle = C.paper; ctx.fill();
+      ctx.restore();
+    }
+    const token = (x, y, s, a2) => {
+      ctx.save(); ctx.globalAlpha *= a2; ctx.translate(x, y); ctx.scale(s, s);
+      rr(-60, -36, 120, 72, 14); ctx.fillStyle = C.signal; ctx.fill();
+      lock(0, -6, 30, C.ink);
+      ctx.restore();
+    };
+    if (merge > 0) {
+      const lockLab = seg(t, 9.85, 10.0) * (1 - seg(t, 10.0, 10.1));
+      if (lockLab > 0) text('CHIFFRÉ', 130, 268, { font: font(600, 14, F.mono), color: rgba(C.signal, lockLab), align: 'center', ls: 3 });
+      for (let c = 0; c < 4; c++) {
+        const y = lerp(200, 122 + c * 64, dup), x = lerp(130, 92, dup), s = lerp(clamp(merge, 0, 1.2), .6, dup);
+        if (c > 0 && dup <= 0) continue;
+        if (leave > 0) {
+          const lx = lerp(x, 0, leave), ly = lerp(y, 200, leave);
+          token(lx, ly, s * (1 - leave * .8), 1 - leave * .5);
+        } else token(x, y, s, 1);
+        const tagA = seg(t, 10.2 + c * .04, 10.35 + c * .04) * (1 - leave);
+        if (tagA > 0) text('→ ' + DEST[c].name, 144, y, { font: font(500, 14, F.mono), color: rgba(C.paper, tagA), base: 'middle', ls: 1 });
+      }
+    }
+    const fa = seg(t, 9.8, 10.0);
+    if (fa > 0) text('1 message reçu → 4 copies', 26, 374, { font: font(500, 15, F.mono), color: rgba(C.muted, fa) });
+    ctx.restore();
+    // packets travelling along the leader (in, then copies out)
+    for (let i = 0; i < 4; i++) {
+      const kp = E.inOutCubic(seg(t, 9.2 + i * .05, 9.45 + i * .05));
+      if (kp > 0 && kp < 1) { const x = lerp(A[0], entry[0], kp), y = lerp(A[1], entry[1], kp); glow(GLOW.photon, x, y, 26); ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.fillStyle = C.paper; ctx.fill(); }
+      const ko = E.inOutCubic(seg(t, 10.6 + i * .03, 10.82 + i * .03));
+      if (ko > 0 && ko < 1) { const x = lerp(entry[0], A[0], ko), y = lerp(entry[1], A[1], ko); glow(GLOW.signal, x, y, 26); ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.fillStyle = C.paper; ctx.fill(); }
+    }
+    ctx.restore();
+  }
+
+  const ORDER = [2, 0, 3, 1]; // arrival order of packets #3, #1, #4, #2
+  const SLOTS = [-96, -32, 32, 96];
+  function drawReceiver(t, v) {
+    const kin = E.outQuint(seg(t, 11.55, 12.0)), kout = E.inCubic(seg(t, 13.22, 13.6));
+    const a = kin * (1 - kout);
+    if (a <= 0) return;
+    const P = { x: lerp(1900, 1665, kin) + 260 * kout, y: 600, s: .62 };
+    const D = proj(CV.dakar, v);
+    const entry = [P.x - 170 * P.s, P.y + 40 * P.s];
+    ctx.save();
+    ctx.globalAlpha *= a;
+    const kl = E.inOutCubic(seg(t, 11.85, 12.05));
+    if (kl > 0 && D[2] > 0) {
+      ctx.setLineDash([3, 7]); ctx.strokeStyle = rgba(C.radio, .7); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(D[0], D[1]); ctx.lineTo(lerp(D[0], entry[0], kl), lerp(D[1], entry[1], kl)); ctx.stroke(); ctx.setLineDash([]);
+    }
+    text('À DAKAR · 17:42', P.x, P.y - 345 * P.s - 22, { font: font(500, 15, F.mono), color: C.muted, align: 'center', ls: 2 });
+    ctx.save();
+    ctx.translate(P.x, P.y); ctx.scale(P.s, P.s);
+    phoneShell('17:42', 'Paris, Montréal, Lyon, São Paulo');
+    ctx.save(); rr(-158, -333, 316, 666, 44); ctx.clip();
+    const sortK = E.inOutCubic(seg(t, 12.52, 12.85));
+    const mergeK = E.inOutCubic(seg(t, 12.88, 13.08));
+    for (let k = 0; k < 4; k++) {
+      const id = ORDER[k];
+      const ta = 12.0 + k * .09;
+      const kd = E.outBack(seg(t, ta + .2, ta + .42));
+      if (t < ta + .2) continue;
+      let x = lerp(-190, SLOTS[k], clamp(kd)), y = lerp(0, 60, clamp(kd));
+      if (sortK > 0) { x = lerp(SLOTS[k], SLOTS[id], sortK); y = 60 - Math.sin(Math.PI * sortK) * (k % 2 ? 70 : -55); }
+      if (mergeK > 0) { x = lerp(SLOTS[id], 0, mergeK); y = 60; }
+      drawPacketSquare(x, y, 52 * (1 - mergeK * .7), id + 1, 0, 1 - mergeK);
+    }
+    if (mergeK > 0) {
+      const L = bubbleLayout(), bk = E.outBack(mergeK);
+      ctx.save(); ctx.globalAlpha *= clamp(mergeK * 1.5);
+      ctx.translate(-140 + L.bw / 2, 60); ctx.scale(lerp(.5, 1, bk), lerp(.5, 1, bk));
+      rr(-L.bw / 2, -L.bh / 2, L.bw, L.bh, 18); ctx.fillStyle = C.line; ctx.fill();
+      L.lines.forEach((l, i) => text(l, -L.bw / 2 + 15, -L.bh / 2 + 23 + 23 * i, { font: L.fnt, color: C.paper, base: 'middle' }));
+      ctx.restore();
+    }
+    const orderTag = seg(t, 12.25, 12.4) * (1 - seg(t, 12.85, 12.95));
+    if (orderTag > 0) text(sortK > .5 ? '1 · 2 · 3 · 4' : '3 · 1 · 4 · 2 ?', 0, 150, { font: font(600, 22, F.mono), color: rgba(sortK > .5 ? C.photon : C.radio, orderTag), align: 'center' });
+    ctx.restore();
+    ctx.restore();
+    // packets hopping along the radio link from Dakar to the phone
+    for (let k = 0; k < 4; k++) {
+      const ta = 12.0 + k * .09, kp = E.inOutSine(seg(t, ta, ta + .2));
+      if (kp <= 0 || kp >= 1 || D[2] <= 0) continue;
+      drawPacketSquare(lerp(D[0], entry[0], kp), lerp(D[1], entry[1], kp) - Math.sin(Math.PI * kp) * 30, 30, ORDER[k] + 1);
+    }
+    ctx.restore();
+  }
+
+  function drawGlobeScenes(t) {
+    const ga = E.outCubic(seg(t, 6.78, 7.25));
+    if (ga <= 0) return;
+    const v = viewAt(t);
+    const dim = 1 - .35 * E.inOutCubic(seg(t, 13.3, 14.2));
+    ctx.save();
+    ctx.globalAlpha *= ga;
+    drawGlobe(v, dim);
+
+    // cables of the first leg
+    const litOf = route => Math.max(0, ...PK.filter(p => p.route === route).map(p => uPk(p, t)));
+    [R_DUNANT, R_AMITIE].forEach(r => {
+      strokeRoute(r, v, 0, 1, rgba(C.photon, .16 * dim), 2);
+      strokeRoute(r, v, 0, litOf(r), rgba(C.photon, .55 * dim), 2.5);
+    });
+    DEST.forEach(d => { if (t > d.ts) strokeRoute(d.route, v, 0, uDest(d, t), rgba(C.photon, .5 * dim), 2.5); });
+
+    const cableLab = seg(t, 7.9, 8.2) * (1 - seg(t, 9.3, 9.6));
+    if (cableLab > 0) {
+      const pd = proj(routeAt(R_DUNANT, .55), v), pa = proj(routeAt(R_AMITIE, .5), v);
+      if (pd[2] > .2) text('CÂBLE DUNANT', pd[0], pd[1] + 26, { font: font(600, 15, F.mono), color: rgba(C.photon, cableLab), align: 'center', ls: 2 });
+      if (pa[2] > .2) text('CÂBLE AMITIÉ', pa[0], pa[1] - 18, { font: font(600, 15, F.mono), color: rgba(C.photon, cableLab), align: 'center', ls: 2 });
+      text("AU FOND DE L'ATLANTIQUE · ≈ 6 400 KM", (pd[0] + pa[0]) / 2, Math.max(pd[1], pa[1]) + 64, { font: font(500, 13, F.mono), color: rgba(C.muted, cableLab), align: 'center', ls: 2 });
+    }
+
+    // nodes (routers / landing stations / cities)
+    const firstLeg = 1 - seg(t, 12.6, 13.2) * .6;
+    ['paris', 'sthilaire', 'leporge', 'vabeach', 'lynn'].forEach(k => geoNode(k, v, t, firstLeg));
+    geoNode('ashburn', v, t);
+    DEST.forEach(d => geoNode(d.key, v, t, seg(t, d.ts, d.ts + .2)));
+
+    // scrim behind the captions so the globe dots never fight the text (drawn under labels, pills and packets)
+    const sc = ctx.createRadialGradient(320, 200, 60, 320, 200, 760);
+    sc.addColorStop(0, rgba(C.ink, .9)); sc.addColorStop(.55, rgba(C.ink, .55)); sc.addColorStop(1, rgba(C.ink, 0));
+    ctx.fillStyle = sc; ctx.fillRect(0, 0, 1100, 980);
+
+    // labels
+    const zoomLab = clamp((v.R - 1100) / 1400) * seg(t, 6.9, 7.1);
+    geoLabel('sthilaire', v, 'SAINT-HILAIRE-DE-RIEZ', zoomLab, -16, -4, 'right', C.muted, 14);
+    geoLabel('leporge', v, 'LE PORGE', zoomLab, -16, 10, 'right', C.muted, 14);
+    geoLabel('paris', v, 'PARIS · ROUTEUR', seg(t, 6.95, 7.2) * (1 - seg(t, 9.0, 9.3)), 16, -14);
+    geoLabel('ashburn', v, 'ASHBURN · DATA CENTER', seg(t, 8.5, 8.8) * (1 - seg(t, 9.25, 9.4)), -16, 16, 'right');
+    geoLabel('ashburn', v, 'ASHBURN', seg(t, 10.85, 11.1) * (1 - seg(t, 13.2, 13.5)), -16, 16, 'right', C.muted, 14);
+
+    // packets on the first leg
+    PK.forEach((p, i) => { const u = uPk(p, t); if (t > p.ts && t < p.te + .02) comet(p.route, u, v, 5, String(i + 1)); });
+    // copies to the recipients
+    DEST.forEach(d => { if (t > d.ts && t < d.te + .02) comet(d.route, uDest(d, t), v, 5); });
+
+    // arrival pills
+    DEST.forEach(d => {
+      const k = E.outBack(seg(t, d.te, d.te + .32)), a = seg(t, d.te, d.te + .1) * (1 - seg(t, 13.25, 13.55));
+      if (a <= 0) return;
+      const s = proj(CV[d.key], v);
+      const str = `${d.name} · ${d.time}`, f = font(600, 15, F.mono), w = measure(str, f, 1) + 50;
+      let x = s[0] + d.dx, y = s[1] + d.dy;
+      if (d.align === 'center') x -= w / 2; else if (d.align === 'right') x -= w;
+      ctx.save(); ctx.globalAlpha *= a;
+      ctx.translate(s[0], s[1]); ctx.scale(k, k); ctx.translate(-s[0], -s[1]);
+      rr(x, y - 16, w, 32, 16); ctx.fillStyle = C.paper; ctx.fill();
+      text(str, x + 14, y + 1, { font: f, color: C.ink, base: 'middle', ls: 1 });
+      checks(x + w - 30, y + 6, 13, C.ink);
+      ctx.restore();
+    });
+
+    if (t > 9.15 && t < 11) drawDataCenter(t, v);
+    if (t > 11.5 && t < 13.7) drawReceiver(t, v);
+    ctx.restore();
+  }
+
+  /* ================================================================
+     FRAME
+     ================================================================ */
+  let scale = 1;
+  function render(t) {
+    t = clamp(t, 0, DUR);
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    drawBackground(t);
+    if (t < 5.6) {
+      // S1–S3, with a zoom-through into the fibre at the end
+      // dive into the underground fibre: the scene fades first, then the cable swells into the next shot
+      const z = 1 + 11 * E.inCubic(seg(t, 5.05, 5.5));
+      const za = 1 - seg(t, 5.3, 5.5), sf = 1 - seg(t, 5.02, 5.24);
+      ctx.save();
+      ctx.globalAlpha = za;
+      ctx.translate(1860, 962); ctx.scale(z, z); ctx.translate(-1860, -962);
+      drawRadioScene(t, sf);
+      ctx.globalAlpha = za * sf;
+      drawSenderPhone(t, phoneState(t));
+      if (t > 1.8 && t < 4.0) drawPanel(t);
+      ctx.restore();
+    }
+    if (t > 5.25 && t < 7.1) drawFiber(t);
+    if (t > 6.75) drawGlobeScenes(t);
+    drawCaptions(t);
+    drawClockAndOutro(t);
+    drawProgress(t);
+  }
+
+  /* ================================================================
+     PLAYER
+     ================================================================ */
+  const stage = cv.parentElement;
+  const playBtn = document.getElementById('play'), playIcon = document.getElementById('play-icon');
+  const restartBtn = document.getElementById('restart');
+  const scrub = document.getElementById('scrub'), fill = scrub.querySelector('.fill'), knob = scrub.querySelector('.knob');
+  const timeEl = document.getElementById('time');
+  const steps = Array.from(document.querySelectorAll('.step'));
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let T = 8.4, playing = false, last = 0, exporting = false;
+
+  SEGMENTS.slice(0, -1).forEach(([, b]) => { const d = document.createElement('div'); d.className = 'tick'; d.style.left = (b / DUR * 100) + '%'; scrub.insertBefore(d, knob); });
+
+  function sizeCanvas() {
+    if (exporting) return;
+    const r = cv.getBoundingClientRect();
+    if (!r.width) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.min(W, Math.round(r.width * dpr));
+    if (cv.width !== w) { cv.width = w; cv.height = Math.round(w * 9 / 16); }
+    scale = cv.width / W;
+    render(T);
+  }
+  function syncUI() {
+    const p = T / DUR * 100;
+    fill.style.width = p + '%';
+    knob.style.left = p + '%';
+    timeEl.textContent = `${fr(T, 1)} / 15 s`;
+    scrub.setAttribute('aria-valuenow', T.toFixed(1));
+    scrub.setAttribute('aria-valuetext', `${fr(T, 1)} secondes`);
+    const atEnd = T >= DUR;
+    playIcon.setAttribute('d', playing ? 'M6 4.5h4.2v15H6zM13.8 4.5H18v15h-4.2z' : atEnd ? 'M12 5V1.5L7 6.5l5 5V8a5 5 0 1 1-5 5H4.5A7.5 7.5 0 1 0 12 5z' : 'M7 4.5v15l13-7.5z');
+    playBtn.setAttribute('aria-label', playing ? 'Pause' : atEnd ? 'Rejouer' : 'Lecture');
+    let cur = SEGMENTS.findIndex(([a, b]) => T >= a && T < b);
+    if (cur < 0) cur = SEGMENTS.length - 1;
+    steps.forEach((s, i) => (i === cur ? s.setAttribute('aria-current', 'step') : s.removeAttribute('aria-current')));
+  }
+  function tick(now) {
+    if (!playing) return;
+    const dt = Math.min(.05, (now - last) / 1000);
+    last = now;
+    T = Math.min(DUR, T + dt);
+    render(T);
+    if (T >= DUR) playing = false;
+    syncUI();
+    if (playing) requestAnimationFrame(tick);
+  }
+  function play() { if (T >= DUR) T = 0; playing = true; last = performance.now(); syncUI(); requestAnimationFrame(tick); }
+  function pause() { playing = false; syncUI(); }
+  function seek(t) { T = clamp(t, 0, DUR); render(T); syncUI(); }
+  const toggle = () => (playing ? pause() : play());
+
+  playBtn.addEventListener('click', toggle);
+  restartBtn.addEventListener('click', () => { T = 0; play(); });
+  cv.addEventListener('click', toggle);
+  steps.forEach(s => s.addEventListener('click', () => { seek(parseFloat(s.dataset.at) + .01); play(); }));
+  let dragging = false, wasPlaying = false;
+  const seekFromEvent = e => { const r = scrub.getBoundingClientRect(); seek((e.clientX - r.left) / r.width * DUR); };
+  scrub.addEventListener('pointerdown', e => { dragging = true; wasPlaying = playing; playing = false; scrub.setPointerCapture(e.pointerId); seekFromEvent(e); });
+  scrub.addEventListener('pointermove', e => { if (dragging) seekFromEvent(e); });
+  const endDrag = () => { if (!dragging) return; dragging = false; if (wasPlaying && T < DUR) play(); };
+  scrub.addEventListener('pointerup', endDrag);
+  scrub.addEventListener('pointercancel', endDrag);
+  scrub.addEventListener('keydown', e => {
+    const step = { ArrowLeft: -.5, ArrowDown: -.5, ArrowRight: .5, ArrowUp: .5 }[e.key];
+    if (step) { e.preventDefault(); seek(T + step); }
+    else if (e.key === 'Home') { e.preventDefault(); seek(0); }
+    else if (e.key === 'End') { e.preventDefault(); seek(DUR); }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === ' ' && !/^(BUTTON|INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && e.target !== scrub) { e.preventDefault(); toggle(); }
+  });
+
+  new ResizeObserver(sizeCanvas).observe(stage);
+  sizeCanvas();
+  syncUI();
+
+  const fontsReady = Promise.race([
+    Promise.all([
+      document.fonts.load(font(600, 40, '"Unbounded"')),
+      document.fonts.load(font(400, 20, '"Instrument Sans"')),
+      document.fonts.load(font(500, 20, '"Instrument Sans"')),
+      document.fonts.load(font(600, 20, '"Instrument Sans"')),
+      document.fonts.load(font(500, 20, '"JetBrains Mono"')),
+      document.fonts.load(font(600, 20, '"JetBrains Mono"')),
+    ]),
+    new Promise(r => setTimeout(r, 2500)),
+  ]).catch(() => {}).then(() => { BL = null; GL = null; });
+
+  fontsReady.then(() => {
+    if (exporting) return;
+    if (reduced) { seek(T); return; }
+    T = 0;
+    play();
+  });
+
+  // Hook used by the offline video export (export/render-video.cjs).
+  window.__anim = {
+    duration: DUR,
+    ready: fontsReady,
+    exportMode(w, h) { exporting = true; playing = false; cv.width = w; cv.height = h; scale = w / W; },
+    frame(t) { render(t); return cv.toDataURL('image/png'); },
+  };
+})();
+</script>
